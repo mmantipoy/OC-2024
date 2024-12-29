@@ -1,0 +1,46 @@
+#!/bin/bash
+
+CGROUP_DIR="/sys/fs/cgroup/test2"
+MEMORY_LIMIT="100M"
+LACK_OF_MEM='2'
+
+cgcreate -a $USER -t $USER -g memory:test2
+
+MEMORY_EVENTS=$(cat $CGROUP_DIR/memory.events)
+echo "Начальное состояние memory events: $MEMORY_EVENTS"
+
+echo $MEMORY_LIMIT > $CGROUP_DIR/memory.max
+echo $MEMORY_LIMIT > $CGROUP_DIR/memory.high
+echo 20000 100000 > $CGROUP_DIR/cpu.max
+
+echo "Запуск stress без ограничений по памяти"
+cgexec -g memory:test2 stress -c 1 --timeout 10s &
+STRESS_PID=$!
+
+sleep 5
+MEMORY_USAGE=$(cat $CGROUP_DIR/memory.current)
+echo "Текущее использование памяти: $MEMORY_USAGE"
+sleep 5
+
+kill $STRESS_PID
+
+echo $LACK_OF_MEM > $CGROUP_DIR/memory.max
+echo $LACK_OF_MEM > $CGROUP_DIR/memory.high
+echo $LACK_OF_MEM > $CGROUP_DIR/memory.swap.high
+echo $LACK_OF_MEM > $CGROUP_DIR/memory.swap.max
+
+echo "Запуск stress С ограничениями способными вызвать OOM Killer"
+cgexec -g memory:test2 stress -c 1 --timeout 10s &
+STRESS_PID=$!
+
+sleep 5
+MEMORY_USAGE=$(cat $CGROUP_DIR/memory.current)
+echo "Текущее использование памяти: $MEMORY_USAGE байт"
+sleep 5 
+
+MEMORY_EVENTS=$(cat $CGROUP_DIR/memory.events)
+echo "Состояние memory events после всех вызовов: $MEMORY_EVENTS"
+
+echo "Завершение работы, удаление cgroup"
+cgdelete -r memory:test2
+echo "eof"
